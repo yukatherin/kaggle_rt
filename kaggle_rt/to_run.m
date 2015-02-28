@@ -54,6 +54,53 @@ select_idx = 1:156000; % makes numberofbatches integer, will improve this code l
 x_train = Xtrain(select_idx,:);
 y_train = ytrain(select_idx,:);
 
+%% 
+myCluster = parcluster('local');
+myCluster.NumWorkers = 100;  % 'Modified' property now TRUE
+saveProfile(myCluster); 
+%%
+n_estimators=7;
+matlabpool('open',n_estimators);
+
+%% train ensemble
+n_test = size(Xtest,1);
+pp = {};
+minl = 1e-5; maxl = 2e-6;
+
+opts.learningrate = .1;
+opts.numepochs =  10;   %  Number of full sweeps through data
+opts.batchsize = 100;  %  Take a mean gradient step over this many samples
+
+ 
+parfor i = 1:n_estimators
+    nn = nnsetup([size(x_train,2) 50 size(y_train,2)]);
+    minl = 1e-6; maxl = 2e-6;
+    nn.weightPenaltyL2 = minl+ rand()*(maxl-minl);  %  L2 weight decay
+
+    [nn, L] = nntrain(nn, x_train, y_train, opts);
+
+    y_pred = nnpredict(nn, Xtest);
+    pp{i} = y_pred;
+end
+
+matlabpool close
+%%
+P = cell2mat(pp);
+%%
+ypred = round(mean(P,2));
+
+
+%% write to file
+fileID = fopen('data/porter7.txt','w');
+fprintf(fileID,'%d\n',ypred-1);
+fclose(fileID);
+% call python munge_preds.py data/ypred.txt from DeepLearnToolbox/kaggle_rt
+
+
+
+
+
+
 %% final model- takes about .7min per epoch
 fnn = nnsetup([size(x_train,2) 50 size(y_train,2)]);
 fnn.weightPenaltyL2 = lstar;
@@ -61,14 +108,6 @@ fopts.numepochs =  20;
 fopts.batchsize = 100;  
 [fnn, L] = nntrain(fnn, x_train, y_train, fopts);
 
+
 %% final model prediction on test set
 ypred=nnpredict(fnn, Xtest);
-
-%% write to file
-fileID = fopen('data/ypreds.txt','w');
-fprintf(fileID,'%d\n',ypred-1);
-display('written to file data/ypreds.txt')
-% call python munge_preds.py data/ypred.txt from DeepLearnToolbox/kaggle_rt
-
-
-
